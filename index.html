@@ -190,10 +190,18 @@ input[type=checkbox]{width:16px;height:16px;accent-color:var(--accent);flex-shri
 
 /* 印刷 */
 @media print{
-  header,.tabs,.btn,.filter-bar,.card-actions,#pane-backup,.modal-overlay{display:none!important;}
-  .tab-pane{display:block!important;}
+  header,.tabs,.btn,.filter-bar,.card-actions,.modal-overlay,
+  #pane-recipe,#pane-backup,#pane-plan,#pane-shopping{display:none!important;}
   body{font-size:12px;}
   .week-table{font-size:11px;}
+  body.print-plan #pane-plan{display:block!important;}
+  body.print-plan #plan-result{display:block!important;}
+  body.print-shopping #pane-shopping{display:block!important;}
+  body.print-both #pane-plan,body.print-both #pane-shopping{display:block!important;}
+  body.print-both #plan-result{display:block!important;}
+  .section-title{font-size:16px;margin-bottom:8px;}
+  .shop-list{border:none;padding:0;}
+  .shop-item{font-size:13px;}
 }
 
 /* トースト */
@@ -328,9 +336,11 @@ input[type=checkbox]{width:16px;height:16px;accent-color:var(--accent);flex-shri
 
   <div class="bk-card">
     <div class="bk-title">🖨 印刷</div>
-    <div class="bk-desc">週間献立表を印刷できます。</div>
+    <div class="bk-desc">印刷したい内容を選んでください。</div>
     <div class="bk-actions">
-      <button class="btn btn-secondary" onclick="window.print()">印刷する</button>
+      <button class="btn btn-secondary" onclick="printTarget('plan')">📅 献立だけ</button>
+      <button class="btn btn-secondary" onclick="printTarget('shopping')">🛒 買い物リストだけ</button>
+      <button class="btn btn-secondary" onclick="printTarget('both')">📄 献立＋買い物リスト</button>
     </div>
   </div>
 
@@ -1348,6 +1358,18 @@ function loadSamples(){
 function closeWelcome(){
   document.getElementById('welcome-modal').classList.remove('open');
   localStorage.setItem('kondate_welcomed','1');
+}
+
+// ===== 印刷 =====
+function printTarget(target){
+  // 献立が未作成の場合は警告
+  if((target==='plan'||target==='both') && !currentPlan.days){
+    showToast('先に献立を作成してください'); return;
+  }
+  const cls = 'print-'+target;
+  document.body.classList.add(cls);
+  window.print();
+  document.body.classList.remove(cls);
 }
 
 // ===== トースト =====
