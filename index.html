@@ -233,6 +233,7 @@ input[type=checkbox]{width:16px;height:16px;accent-color:var(--accent);flex-shri
     <div class="filter-chip" onclick="setFilter(this,'汁物')">汁物</div>
     <div class="filter-chip" onclick="setFilter(this,'★★★ 定番')">★★★ 定番</div>
     <div class="filter-chip" onclick="setFilter(this,'平日向き')">平日向き</div>
+    <div class="filter-chip" onclick="setFilter(this,'要編集')">要編集</div>
   </div>
   <div class="recipe-grid" id="recipe-grid"></div>
 </div>
@@ -346,32 +347,44 @@ input[type=checkbox]{width:16px;height:16px;accent-color:var(--accent);flex-shri
 <div class="modal-overlay" id="quick-modal">
   <div class="modal">
     <div class="modal-title">⚡ クイック登録</div>
-    <div class="quick-tabs">
-      <button class="quick-tab active" onclick="switchQuickTab('url',this)">🔗 URLから</button>
-      <button class="quick-tab" onclick="switchQuickTab('text',this)">📝 テキストから</button>
-      <button class="quick-tab" onclick="switchQuickTab('photo',this)">📷 写真から</button>
-    </div>
-    <div class="quick-pane active" id="qp-url">
-      <div class="coming-soon">
-        <div class="cs-i">🔗</div>
-        <p><strong>URLから自動登録（開発中）</strong><br>クックパッド・クラシルなどのURLから食材・手順を自動取得する機能です。<br>今すぐ使う場合は「＋ 追加」からレシピを登録してください。</p>
+    <p style="font-size:13px;color:var(--ink2);margin-bottom:16px;line-height:1.7;">
+      レシピ名とURLだけで即保存できます。<br>食材・分類などは後から「編集」で追加できます。
+    </p>
+
+    <div class="form-grid">
+      <div class="form-group form-full">
+        <label class="form-label">レシピ名 <span style="color:var(--accent)">*</span></label>
+        <input type="text" id="q-name" placeholder="例：豚の生姜焼き" autocomplete="off">
       </div>
-      <div class="form-group" style="margin-top:12px;">
-        <label class="form-label">URLをメモしておく（参考URLとして保存）</label>
-        <input type="text" id="quick-url-input" placeholder="https://...">
+      <div class="form-group form-full">
+        <label class="form-label">参考URL（Safariからコピーして貼り付け）</label>
+        <input type="text" id="q-url" placeholder="https://..." autocomplete="off" inputmode="url">
       </div>
-      <div class="modal-actions">
-        <button class="btn btn-secondary" onclick="closeQuickReg()">閉じる</button>
-        <button class="btn btn-primary" onclick="openFromQuickUrl()">このURLでレシピ追加画面を開く</button>
+      <div class="form-group">
+        <label class="form-label">分類</label>
+        <select id="q-category">
+          <option>主菜</option><option>副菜</option><option>汁物</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">リピート度</label>
+        <select id="q-repeat">
+          <option value="3">★★★ 定番</option>
+          <option value="2" selected>★★ また作りたい</option>
+          <option value="1">★ たまに</option>
+        </select>
       </div>
     </div>
-    <div class="quick-pane" id="qp-text">
-      <div class="coming-soon"><div class="cs-i">📝</div><p><strong>テキストから自動登録（開発中）</strong><br>レシピのテキストを貼り付けるだけで食材・手順を自動解析する機能です。</p></div>
-      <div class="modal-actions"><button class="btn btn-secondary" onclick="closeQuickReg()">閉じる</button></div>
+
+    <div style="background:var(--bg2);border-radius:8px;padding:10px 14px;margin-top:14px;font-size:12px;color:var(--ink3);line-height:1.8;">
+      💡 <strong style="color:var(--ink2);">使い方</strong><br>
+      SafariでレシピページのURLをコピー → このアプリに戻って貼り付け → 保存<br>
+      食材・主食材・味付けは後で編集できます。献立に出したい場合は先に分類だけ設定を。
     </div>
-    <div class="quick-pane" id="qp-photo">
-      <div class="coming-soon"><div class="cs-i">📷</div><p><strong>写真・OCRから登録（開発中）</strong><br>レシピ本の写真を撮影してOCRで自動読み取りする機能です。</p></div>
-      <div class="modal-actions"><button class="btn btn-secondary" onclick="closeQuickReg()">閉じる</button></div>
+
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeQuickReg()">キャンセル</button>
+      <button class="btn btn-primary" onclick="saveQuickRecipe()">💾 すぐ保存する</button>
     </div>
   </div>
 </div>
@@ -592,6 +605,7 @@ function renderRecipes(){
   if(currentFilter==='all')          list=[...recipes];
   else if(currentFilter==='平日向き')  list=recipes.filter(r=>r.weekday);
   else if(currentFilter==='★★★ 定番') list=recipes.filter(r=>r.repeat===3);
+  else if(currentFilter==='要編集')    list=recipes.filter(r=>r.draft);
   else                                list=recipes.filter(r=>r.category===currentFilter);
 
   const counts={主菜:0,副菜:0,汁物:0};
@@ -627,8 +641,9 @@ function renderRecipes(){
     const mp=r.mealPrep?`<span class="tag">作り置き可</span>`:'';
     const fz=r.freezable?`<span class="tag">冷凍可</span>`:'';
     const mi=(r.mainIngs||[]).map(i=>`<span class="tag">${esc(i)}</span>`).join('');
+    const draftBadge=r.draft?`<span style="font-size:11px;background:#fff3cd;color:#7a5c00;border-radius:4px;padding:2px 7px;font-weight:700;">要編集</span>`:'';
     const timeStr=r.cookTime?`⏱ ${r.cookTime}分`:'';
-    return `<div class="recipe-card">
+    return `<div class="recipe-card" style="${r.draft?'border-color:#f0d060;':''}}">
       <div class="card-header">
         <div class="recipe-name">${esc(r.name)}</div>
         <span class="badge badge-${r.category}">${r.category}</span>
@@ -636,8 +651,10 @@ function renderRecipes(){
       <div class="card-meta">
         <span class="${repClass}">${repLabel}</span>
         ${timeStr?`<span>${timeStr}</span>`:''}
+        ${draftBadge}
       </div>
       ${ings?`<div class="card-ings">📦 ${esc(ings)}</div>`:''}
+      ${r.url&&!r.ingredients?.length?`<div style="font-size:12px;color:var(--blue);margin-bottom:4px;">🔗 URLあり</div>`:''}
       <div class="tag-row">${mi}${flv}${mtd}${wd}${mp}${fz}</div>
       <div class="card-actions">
         <button class="btn btn-secondary btn-sm" onclick="openDetail('${r.id}')">📖 詳細</button>
@@ -734,6 +751,7 @@ function saveRecipe(){
     memo:         document.getElementById('f-memo').value.trim(),
     createdAt:    new Date().toISOString().slice(0,10),
     isSample:     editingId?(recipes.find(r=>r.id===editingId)?.isSample||false):false,
+    draft:        false, // 編集保存したらdraft解除
   };
   if(editingId){
     const idx=recipes.findIndex(r=>r.id===editingId);
@@ -793,18 +811,39 @@ function closeDetail(){ document.getElementById('detail-modal').classList.remove
 function editFromDetail(){ closeDetail(); if(detailCurrentId) openRecipeModal(detailCurrentId); }
 
 // ===== クイック登録 =====
-function openQuickReg(){ document.getElementById('quick-modal').classList.add('open'); }
-function closeQuickReg(){ document.getElementById('quick-modal').classList.remove('open'); }
-function switchQuickTab(name,btn){
-  document.querySelectorAll('.quick-tab').forEach(b=>b.classList.remove('active'));
-  document.querySelectorAll('.quick-pane').forEach(p=>p.classList.remove('active'));
-  btn.classList.add('active');
-  document.getElementById('qp-'+name).classList.add('active');
+function openQuickReg(){
+  document.getElementById('q-name').value='';
+  document.getElementById('q-url').value='';
+  document.getElementById('q-category').value='主菜';
+  document.getElementById('q-repeat').value='2';
+  document.getElementById('quick-modal').classList.add('open');
+  // 少し遅らせてフォーカス（iOSキーボード対応）
+  setTimeout(()=>document.getElementById('q-name').focus(), 100);
 }
-function openFromQuickUrl(){
-  const url=document.getElementById('quick-url-input').value.trim();
-  closeQuickReg(); openRecipeModal(null);
-  if(url) setTimeout(()=>{ document.getElementById('f-url').value=url; },60);
+function closeQuickReg(){ document.getElementById('quick-modal').classList.remove('open'); }
+
+function saveQuickRecipe(){
+  const name=document.getElementById('q-name').value.trim();
+  if(!name){ showToast('レシピ名を入力してください'); return; }
+  const data={
+    id:       genId(),
+    name,
+    category: document.getElementById('q-category').value,
+    repeat:   parseInt(document.getElementById('q-repeat').value),
+    url:      document.getElementById('q-url').value.trim(),
+    // 後から埋める項目はすべて空
+    cookTime:0, weekday:false, mealPrep:false, freezable:false,
+    flavor:'', method:'', mainIngs:[], ingredients:[], shopIngs:[],
+    steps:'', memo:'',
+    createdAt:new Date().toISOString().slice(0,10),
+    isSample:false,
+    draft:true, // 未完成フラグ
+  };
+  recipes.push(data);
+  saveRecipes();
+  closeQuickReg();
+  renderRecipes();
+  showToast(`「${name}」を保存しました。あとで食材などを追加してください。`);
 }
 
 // ===== 献立設定描画 =====
