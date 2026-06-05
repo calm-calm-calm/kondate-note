@@ -199,6 +199,24 @@ input[type=checkbox]{width:16px;height:16px;accent-color:var(--accent);flex-shri
 /* トースト */
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--ink);color:#fff;padding:10px 22px;border-radius:8px;font-size:13px;z-index:999;transition:transform .3s;pointer-events:none;white-space:nowrap;}
 .toast.show{transform:translateX(-50%) translateY(0);}
+
+/* 食材タグ入力 */
+.ing-input-wrap{border:1px solid var(--border);border-radius:6px;background:var(--bg);padding:6px 8px;min-height:44px;cursor:text;transition:border-color .15s;}
+.ing-input-wrap:focus-within{border-color:var(--accent);}
+.ing-tags{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:4px;}
+.ing-tag{display:inline-flex;align-items:center;gap:4px;background:var(--ink);color:#fff;border-radius:4px;padding:3px 8px;font-size:12px;font-weight:500;}
+.ing-tag-del{background:none;border:none;color:rgba(255,255,255,.7);cursor:pointer;font-size:14px;line-height:1;padding:0;display:flex;align-items:center;}
+.ing-tag-del:hover{color:#fff;}
+.ing-text-input{border:none;outline:none;background:transparent;font-family:'Noto Sans JP',sans-serif;font-size:13px;color:var(--ink);min-width:120px;width:100%;padding:2px 0;}
+.ing-suggest{position:absolute;z-index:300;background:var(--card);border:1px solid var(--border);border-radius:6px;box-shadow:0 4px 16px var(--shadow);max-height:180px;overflow-y:auto;width:100%;}
+.ing-suggest-item{padding:8px 12px;font-size:13px;cursor:pointer;color:var(--ink);}
+.ing-suggest-item:hover,.ing-suggest-item.kbd{background:var(--bg2);}
+.ing-suggest-item mark{background:transparent;color:var(--accent);font-weight:700;}
+.ing-input-outer{position:relative;}
+.ing-presets{display:flex;gap:5px;flex-wrap:wrap;margin-top:8px;}
+.ing-preset-btn{padding:4px 10px;border-radius:20px;border:1px solid var(--border);background:var(--card);font-size:12px;cursor:pointer;color:var(--ink2);transition:all .12s;user-select:none;}
+.ing-preset-btn:hover{background:var(--bg2);border-color:var(--ink3);}
+.ing-preset-btn.used{opacity:.4;}
 </style>
 </head>
 <body>
@@ -511,13 +529,35 @@ input[type=checkbox]{width:16px;height:16px;accent-color:var(--accent);flex-shri
       <div class="form-section form-full">食材・作り方</div>
 
       <div class="form-group form-full">
-        <label class="form-label">使用食材（カンマ区切り）</label>
-        <input type="text" id="f-ingredients" placeholder="例：豚こま肉、玉ねぎ、生姜">
+        <label class="form-label">使用食材</label>
+        <div class="ing-input-outer">
+          <div class="ing-input-wrap" id="ing-wrap" onclick="document.getElementById('ing-text').focus()">
+            <div class="ing-tags" id="ing-tags"></div>
+            <input type="text" id="ing-text" class="ing-text-input" placeholder="食材名を入力してEnter…"
+              autocomplete="off" autocorrect="off" spellcheck="false"
+              oninput="onIngInput(this,'ingredients')"
+              onkeydown="onIngKeydown(event,'ingredients')"
+              onblur="hideIngSuggest('ingredients')">
+          </div>
+          <div class="ing-suggest" id="ing-suggest" style="display:none;"></div>
+        </div>
+        <div class="ing-presets" id="ing-presets"></div>
+        <span class="notice">入力してEnter or タップで追加。タグの×で削除。</span>
       </div>
 
       <div class="form-group form-full">
-        <label class="form-label">買い物用食材名（任意・カンマ区切り）</label>
-        <input type="text" id="f-shopings" placeholder="例：豚肉、玉ねぎ、生姜　←表記ゆれをまとめたい場合">
+        <label class="form-label">買い物用食材名（任意）</label>
+        <div class="ing-input-outer">
+          <div class="ing-input-wrap" id="shop-wrap" onclick="document.getElementById('shop-text').focus()">
+            <div class="ing-tags" id="shop-tags"></div>
+            <input type="text" id="shop-text" class="ing-text-input" placeholder="例：豚肉（表記ゆれをまとめたい場合）"
+              autocomplete="off" autocorrect="off" spellcheck="false"
+              oninput="onIngInput(this,'shopings')"
+              onkeydown="onIngKeydown(event,'shopings')"
+              onblur="hideIngSuggest('shopings')">
+          </div>
+          <div class="ing-suggest" id="shop-suggest" style="display:none;"></div>
+        </div>
         <span class="notice">未入力の場合は「使用食材」をそのまま買い物リストに使います。</span>
       </div>
 
@@ -672,6 +712,152 @@ function deleteRecipe(id){
   showToast('削除しました');
 }
 
+// ===== 食材タグ入力 =====
+// 定番プリセット食材
+const PRESET_INGS = [
+  '豚肉','鶏肉','牛肉','ひき肉','魚',
+  '卵','豆腐','玉ねぎ','じゃがいも','にんじん',
+  '大根','キャベツ','ほうれん草','もやし','ピーマン',
+  'トマト','なす','きのこ','長ねぎ','生姜','にんにく',
+];
+
+// 各フィールドのタグ状態
+const ingState = {
+  ingredients: [],
+  shopings: [],
+};
+
+// フィールドIDからDOM要素を引く
+function ingEls(field){
+  if(field==='ingredients') return {
+    tags: document.getElementById('ing-tags'),
+    text: document.getElementById('ing-text'),
+    suggest: document.getElementById('ing-suggest'),
+    presets: document.getElementById('ing-presets'),
+  };
+  return {
+    tags: document.getElementById('shop-tags'),
+    text: document.getElementById('shop-text'),
+    suggest: document.getElementById('shop-suggest'),
+    presets: null,
+  };
+}
+
+function renderIngTags(field){
+  const {tags, presets} = ingEls(field);
+  tags.innerHTML = ingState[field].map((item,i)=>
+    `<span class="ing-tag">${esc(item)}<button class="ing-tag-del" type="button" onmousedown="removeIng('${field}',${i})">×</button></span>`
+  ).join('');
+  // プリセットボタンのused更新
+  if(presets){
+    presets.querySelectorAll('.ing-preset-btn').forEach(btn=>{
+      btn.classList.toggle('used', ingState[field].includes(btn.dataset.val));
+    });
+  }
+}
+
+function addIng(field, val){
+  val = val.trim();
+  if(!val) return;
+  if(!ingState[field].includes(val)){
+    ingState[field].push(val);
+    renderIngTags(field);
+  }
+  const {text} = ingEls(field);
+  text.value='';
+  hideIngSuggest(field);
+}
+
+function removeIng(field, idx){
+  ingState[field].splice(idx,1);
+  renderIngTags(field);
+}
+
+function onIngKeydown(e, field){
+  const {text, suggest} = ingEls(field);
+  const items = suggest.querySelectorAll('.ing-suggest-item');
+  const kbdIdx = [...items].findIndex(i=>i.classList.contains('kbd'));
+
+  if(e.key==='Enter'||e.key==='，'||e.key===','){
+    e.preventDefault();
+    // サジェストのkbd選択中ならそちらを確定
+    if(kbdIdx>=0){
+      addIng(field, items[kbdIdx].dataset.val);
+    } else {
+      addIng(field, text.value);
+    }
+  } else if(e.key==='ArrowDown'){
+    e.preventDefault();
+    const next = kbdIdx<items.length-1 ? kbdIdx+1 : 0;
+    items.forEach((i,n)=>i.classList.toggle('kbd',n===next));
+  } else if(e.key==='ArrowUp'){
+    e.preventDefault();
+    const prev = kbdIdx>0 ? kbdIdx-1 : items.length-1;
+    items.forEach((i,n)=>i.classList.toggle('kbd',n===prev));
+  } else if(e.key==='Backspace'&&text.value===''&&ingState[field].length>0){
+    ingState[field].pop();
+    renderIngTags(field);
+  } else if(e.key==='Escape'){
+    hideIngSuggest(field);
+  }
+}
+
+function onIngInput(textEl, field){
+  const q = textEl.value.trim();
+  if(!q){ hideIngSuggest(field); return; }
+  // ① 過去登録食材からサジェスト
+  const pastIngs = new Set();
+  recipes.forEach(r=>{
+    (r.ingredients||[]).forEach(i=>pastIngs.add(i));
+    (r.shopIngs||[]).forEach(i=>pastIngs.add(i));
+  });
+  const matched = [...pastIngs]
+    .filter(i=>i.includes(q) && !ingState[field].includes(i))
+    .slice(0,8);
+  showIngSuggest(field, matched, q);
+}
+
+function showIngSuggest(field, items, q){
+  const {suggest} = ingEls(field);
+  if(!items.length){ suggest.style.display='none'; return; }
+  suggest.innerHTML = items.map(item=>{
+    const hi = item.replace(q, `<mark>${esc(q)}</mark>`);
+    return `<div class="ing-suggest-item" data-val="${esc(item)}"
+      onmousedown="addIng('${field}','${esc(item)}')">${hi}</div>`;
+  }).join('');
+  suggest.style.display='block';
+}
+
+function hideIngSuggest(field){
+  setTimeout(()=>{
+    const {suggest} = ingEls(field);
+    if(suggest) suggest.style.display='none';
+  }, 150);
+}
+
+function buildIngPresets(){
+  const presets = document.getElementById('ing-presets');
+  if(!presets) return;
+  presets.innerHTML = PRESET_INGS.map(ing=>
+    `<button type="button" class="ing-preset-btn" data-val="${ing}"
+      onclick="addIng('ingredients','${ing}')">${ing}</button>`
+  ).join('');
+  // usedクラス初期化
+  renderIngTags('ingredients');
+}
+
+// openRecipeModal内で呼ぶ: フィールドをリセットして既存値をセット
+function initIngFields(r){
+  ingState.ingredients = r ? [...(r.ingredients||[])] : [];
+  ingState.shopings    = r ? [...(r.shopIngs||[])]    : [];
+  renderIngTags('ingredients');
+  renderIngTags('shopings');
+  buildIngPresets();
+  // テキスト入力欄はクリア
+  document.getElementById('ing-text').value='';
+  document.getElementById('shop-text').value='';
+}
+
 // ===== 主食材チェックグリッド =====
 function buildMainIngChecks(selected=[]){
   document.getElementById('main-ing-checks').innerHTML=MAIN_INGS.map(ing=>
@@ -709,11 +895,12 @@ function openRecipeModal(id){
   document.getElementById('f-freeze').checked    =r?.freezable||false;
   document.getElementById('f-flavor').value      =r?.flavor||'';
   document.getElementById('f-method').value      =r?.method||'';
-  document.getElementById('f-ingredients').value =(r?.ingredients||[]).join('、');
-  document.getElementById('f-shopings').value    =(r?.shopIngs||[]).join('、');
   document.getElementById('f-steps').value       =r?.steps||'';
   document.getElementById('f-url').value         =r?.url||'';
   document.getElementById('f-memo').value        =r?.memo||'';
+
+  // 食材タグUI初期化
+  initIngFields(r);
 
   // リピート度
   const repVal=String(r?.repeat||2);
@@ -744,8 +931,8 @@ function saveRecipe(){
     flavor:       document.getElementById('f-flavor').value,
     method:       document.getElementById('f-method').value,
     mainIngs,
-    ingredients:  splitCSV(document.getElementById('f-ingredients').value),
-    shopIngs:     splitCSV(document.getElementById('f-shopings').value),
+    ingredients:  [...ingState.ingredients],
+    shopIngs:     [...ingState.shopings],
     steps:        document.getElementById('f-steps').value.trim(),
     url:          document.getElementById('f-url').value.trim(),
     memo:         document.getElementById('f-memo').value.trim(),
